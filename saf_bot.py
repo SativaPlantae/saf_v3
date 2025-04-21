@@ -1,6 +1,7 @@
 import os
 import streamlit as st
 import pandas as pd
+import re
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import FAISS
 from langchain.embeddings import OpenAIEmbeddings
@@ -16,7 +17,35 @@ openai_api_key = os.getenv("OPENAI_API_KEY")
 # 🔄 Carrega planilha e configura a cadeia com memória
 @st.cache_resource
 def carregar_chain_com_memoria():
-    df = pd.read_csv("data.csv")
+    df = pd.read_csv("data.csv", sep=";")
+
+    # 🔧 1. Renomear colunas
+    df.columns = df.columns.str.lower().str.strip() \
+        .str.replace(" ", "_").str.replace("ã", "a") \
+        .str.replace("ç", "c").str.replace("é", "e") \
+        .str.replace("ó", "o").str.replace("ú", "u") \
+        .str.replace("(", "").str.replace(")", "").str.replace(",", "_")
+
+    # 🔧 2. Limpar valores monetários
+    for col in ["faturamento_anual", "despesas_anuais", "lucro_anual"]:
+        df[col] = df[col].str.replace("R\$", "").str.replace(".", "").str.replace(",", ".").astype(float)
+
+    # 🔧 3. Separar produção por indivíduo
+    def separar_valor_unidade(valor):
+        if isinstance(valor, str):
+            match = re.match(r"([\d,.]+)\s*(\w+)", valor.strip())
+            if match:
+                numero = float(match.group(1).replace(",", "."))
+                unidade = match.group(2)
+                return pd.Series([numero, unidade])
+        return pd.Series([None, None])
+
+    if "producao_por_individuo_kg_un_ou_m³" in df.columns:
+        df[["producao_individual_valor", "producao_individual_unidade"]] = \
+            df["producao_por_individuo_kg_un_ou_m³"].apply(separar_valor_unidade)
+        df.drop(columns=["producao_por_individuo_kg_un_ou_m³"], inplace=True)
+
+    # 🔄 4. Converter planilha em texto
     texto_unico = "\n".join(df.astype(str).apply(lambda x: " | ".join(x), axis=1))
     document = Document(page_content=texto_unico)
 
@@ -27,6 +56,7 @@ def carregar_chain_com_memoria():
     vectorstore = FAISS.from_documents(docs, embeddings)
     retriever = vectorstore.as_retriever()
 
+    # Prompt personalizado
     prompt_template = PromptTemplate(
         input_variables=["chat_history", "context", "question"],
         template="""
@@ -56,12 +86,12 @@ Resposta:"""
 
     return chain
 
-# ⚙️ Configuração visual
+# ⚙️ Interface visual
 st.set_page_config(page_title="Chatbot SAF Cristal 🌱", page_icon="🐝")
 st.title("🐝 Chatbot do SAF Cristal")
 st.markdown("Converse com o assistente sobre o Sistema Agroflorestal Cristal 📊")
 
-# Inicializa o histórico visual (mensagens)
+# Histórico da conversa
 if "mensagens" not in st.session_state:
     st.session_state.mensagens = []
 
@@ -74,7 +104,7 @@ for remetente, mensagem in st.session_state.mensagens:
     with st.chat_message("user" if remetente == "🧑‍🌾" else "assistant", avatar=remetente):
         st.markdown(mensagem)
 
-# Campo de entrada sempre no fim
+# Campo de entrada
 user_input = st.chat_input("Digite sua pergunta aqui...")
 
 if user_input:

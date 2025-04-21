@@ -1,7 +1,6 @@
 import os
 import streamlit as st
 import pandas as pd
-import re
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import FAISS
 from langchain.embeddings import OpenAIEmbeddings
@@ -11,22 +10,20 @@ from langchain.memory import ConversationBufferMemory
 from langchain.prompts import PromptTemplate
 from langchain.schema import Document
 
-# Carrega chave da OpenAI
+# 🔐 Chave da OpenAI
 openai_api_key = os.getenv("OPENAI_API_KEY")
 
-# Função para carregar e preparar os dados
-def carregar_dados(caminho_csv):
-    df = pd.read_csv(caminho_csv, sep=";")
-    texto_unico = "\n".join(df.astype(str).apply(lambda x: " | ".join(x), axis=1))
-    return Document(page_content=texto_unico)
-
-# Carrega a cadeia com memória de conversa
 @st.cache_resource
-def carregar_chain():
-    documento = carregar_dados("data.csv")
+def carregar_chain_com_memoria():
+    df = pd.read_csv("data.csv", sep=";")
 
+    # Junta tudo em um único texto
+    texto_unico = "\n".join(df.astype(str).apply(lambda x: " | ".join(x), axis=1))
+    document = Document(page_content=texto_unico)
+
+    # Divide em pedaços menores
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
-    docs = splitter.split_documents([documento])
+    docs = splitter.split_documents([document])
 
     embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
     vectorstore = FAISS.from_documents(docs, embeddings)
@@ -35,13 +32,14 @@ def carregar_chain():
     prompt = PromptTemplate(
         input_variables=["chat_history", "context", "question"],
         template="""
-Você é um assistente virtual treinado com base em dados do Sistema Agroflorestal SAF Cristal.
-Fale de forma simples e direta. Se não souber algo, diga isso naturalmente.
+Você é um assistente treinado com base em dados do SAF Cristal.
+Seja claro, direto e acessível. Use o histórico da conversa. 
+Se não souber, diga isso com naturalidade.
 
 Histórico:
 {chat_history}
 
-Informações relevantes:
+Informações:
 {context}
 
 Pergunta: {question}
@@ -57,17 +55,17 @@ Resposta:"""
         combine_docs_chain_kwargs={"prompt": prompt}
     )
 
-# Interface do Streamlit
-st.set_page_config(page_title="Chatbot SAF Cristal", page_icon="🌱")
-st.title("🌱 Chatbot do SAF Cristal")
+# Interface
+st.set_page_config(page_title="Chatbot SAF Cristal 🌱", page_icon="🐝")
+st.title("🐝 Chatbot do SAF Cristal")
+st.markdown("Converse com o assistente sobre o Sistema Agroflorestal Cristal 📊")
 
 if "mensagens" not in st.session_state:
     st.session_state.mensagens = []
 
 if "qa_chain" not in st.session_state:
-    st.session_state.qa_chain = carregar_chain()
+    st.session_state.qa_chain = carregar_chain_com_memoria()
 
-# Mostrar histórico
 for remetente, mensagem in st.session_state.mensagens:
     with st.chat_message("user" if remetente == "🧑‍🌾" else "assistant", avatar=remetente):
         st.markdown(mensagem)

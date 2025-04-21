@@ -1,10 +1,9 @@
-
 import os
 import subprocess
+import sys
 
-# Instala pacotes compatíveis
-subprocess.run([
-    "pip", "install",
+# ✅ Instala os pacotes necessários antes de importar qualquer módulo
+packages = [
     "pydantic==2.6.4",
     "langchain==0.1.16",
     "langchain-openai==0.1.3",
@@ -13,8 +12,11 @@ subprocess.run([
     "streamlit==1.32.2",
     "python-dotenv==1.0.1",
     "pandas==2.2.2"
-])
+]
 
+subprocess.check_call([sys.executable, "-m", "pip", "install"] + packages)
+
+# Imports após instalação
 import streamlit as st
 import pandas as pd
 import re
@@ -28,15 +30,20 @@ from langchain.memory import ConversationBufferMemory
 from langchain.prompts import PromptTemplate
 from langchain_core.documents import Document
 
+# 🔐 Chave da OpenAI
 openai_api_key = os.getenv("OPENAI_API_KEY")
 
+# 📊 Carregamento e limpeza da planilha
 def carregar_e_limpar_dados(caminho_csv: str) -> pd.DataFrame:
     df = pd.read_csv(caminho_csv, sep=";")
+
     def limpar_moeda(valor):
         if isinstance(valor, str):
             valor = valor.replace("R$", "").replace(".", "").replace(",", ".").strip()
-            try: return float(valor)
-            except: return valor
+            try:
+                return float(valor)
+            except:
+                return valor
         return valor
 
     colunas_monetarias = ["Faturamento anual", "Despesas anuais", "Lucro anual", "Preço de venda"]
@@ -46,7 +53,6 @@ def carregar_e_limpar_dados(caminho_csv: str) -> pd.DataFrame:
 
     def separar_valor_unidade(valor):
         if isinstance(valor, str):
-            import re
             match = re.match(r"([\d,\.]+)\s*(\w+)", valor.strip())
             if match:
                 return float(match.group(1).replace(",", ".")), match.group(2)
@@ -57,8 +63,10 @@ def carregar_e_limpar_dados(caminho_csv: str) -> pd.DataFrame:
             *df["Produção por indivíduo (kg, un ou m³)"].map(separar_valor_unidade)
         )
         df.drop(columns=["Produção por indivíduo (kg, un ou m³)"], inplace=True)
+
     return df
 
+# 🤖 Cadeia com memória para conversa
 @st.cache_resource
 def carregar_chain_com_memoria():
     df = carregar_e_limpar_dados("data.csv")
@@ -68,7 +76,7 @@ def carregar_chain_com_memoria():
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
     docs = splitter.split_documents([document])
 
-    embeddings = OpenAIEmbeddings()
+    embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
     vectorstore = Chroma.from_documents(docs, embedding=embeddings, persist_directory="chroma_db")
     retriever = vectorstore.as_retriever()
 
@@ -76,9 +84,8 @@ def carregar_chain_com_memoria():
         input_variables=["chat_history", "context", "question"],
         template="""
 Você é um assistente virtual treinado com base em uma planilha técnica sobre o Sistema Agroflorestal SAF Cristal.
-Fale de forma clara, didática e acessível, como se estivesse conversando com um estudante ou alguém curioso. 
-Use o histórico da conversa para manter a fluidez. Evite respostas robóticas. 
-Se não tiver certeza, diga isso de forma sutil e humana.
+Fale de forma clara, didática e acessível, como se estivesse conversando com um estudante ou alguém curioso.
+Use o histórico da conversa para manter a fluidez. Evite respostas robóticas. Se não tiver certeza, diga isso de forma sutil e humana.
 
 -------------------
 Histórico:
@@ -100,33 +107,42 @@ Resposta:"""
         combine_docs_chain_kwargs={"prompt": prompt_template}
     )
 
+# 🌿 Interface Streamlit
 st.set_page_config(page_title="Chatbot SAF Cristal 🌱", page_icon="🐝")
 st.title("🐝 Chatbot do SAF Cristal")
 st.markdown("Converse com o assistente sobre o Sistema Agroflorestal Cristal 📊")
 
+# Limpar conversa
 if st.button("🧹 Limpar conversa"):
     st.session_state.clear()
     st.experimental_rerun()
 
+# Estado inicial
 if "mensagens" not in st.session_state:
     st.session_state.mensagens = []
+
 if "qa_chain" not in st.session_state:
     st.session_state.qa_chain = carregar_chain_com_memoria()
 
+# Histórico de mensagens
 for remetente, mensagem in st.session_state.mensagens:
     with st.chat_message("user" if remetente == "🧑‍🌾" else "assistant", avatar=remetente):
         st.markdown(mensagem)
 
+# Entrada do usuário
 user_input = st.chat_input("Digite sua pergunta aqui...")
+
 if user_input:
     with st.chat_message("user", avatar="🧑‍🌾"):
         st.markdown(user_input)
     st.session_state.mensagens.append(("🧑‍🌾", user_input))
+
     with st.spinner("Consultando o SAF Cristal..."):
         try:
             resposta = st.session_state.qa_chain.run(user_input)
         except Exception as e:
             resposta = f"⚠️ Ocorreu um erro: {e}"
+
     with st.chat_message("assistant", avatar="🐝"):
         st.markdown(resposta)
     st.session_state.mensagens.append(("🐝", resposta))

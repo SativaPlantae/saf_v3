@@ -19,18 +19,18 @@ openai_api_key = os.getenv("OPENAI_API_KEY")
 def carregar_chain_com_memoria():
     df = pd.read_csv("data.csv", sep=";")
 
-    # 🔧 1. Renomear colunas
+       # 1. Renomear colunas
     df.columns = df.columns.str.lower().str.strip() \
         .str.replace(" ", "_").str.replace("ã", "a") \
         .str.replace("ç", "c").str.replace("é", "e") \
         .str.replace("ó", "o").str.replace("ú", "u") \
         .str.replace("(", "").str.replace(")", "").str.replace(",", "_")
 
-    # 🔧 2. Limpar valores monetários
+    # 2. Limpar valores monetários
     for col in ["faturamento_anual", "despesas_anuais", "lucro_anual"]:
         df[col] = df[col].str.replace("R\$", "").str.replace(".", "").str.replace(",", ".").astype(float)
 
-    # 🔧 3. Separar produção por indivíduo
+    # 3. Separar produção por indivíduo
     def separar_valor_unidade(valor):
         if isinstance(valor, str):
             match = re.match(r"([\d,.]+)\s*(\w+)", valor.strip())
